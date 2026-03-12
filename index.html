@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Spotify Hit Maker</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 50px; }
+        input, select, button { margin: 10px; padding: 10px; border-radius: 5px; border: none; }
+        button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Generate Your Current Hits</h1>
+    <a href="/login"><button>1. Login with Spotify</button></a>
+    
+    <div id="filters">
+        <input type="text" id="genre" placeholder="Genre (e.g. rock, pop)">
+        <select id="mood">
+            <option value="happy">Happy/Upbeat</option>
+            <option value="chill">Chill/Relaxed</option>
+        </select>
+        <input type="number" id="bpm" placeholder="BPM (e.g. 128)">
+        <input type="number" id="decade" placeholder="Decade (e.g. 1990)">
+        <br>
+        <button onclick="generate()">2. Create Playlist</button>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        async function generate() {
+            const genre = document.getElementById('genre').value;
+            const mood = document.getElementById('mood').value;
+            const bpm = document.getElementById('bpm').value;
+            const decade = document.getElementById('decade').value;
+
+            const res = await fetch(`/generate-playlist?genre=${genre}&mood=${mood}&bpm=${bpm}&decade=${decade}`);
+            const data = await res.json();
+            
+            if(data.success) {
+                document.getElementById('result').innerHTML = `<a href="${data.url}" target="_blank">View Playlist on Spotify</a>`;
+            } else {
+                alert("Error: " + data.error);
+            }
+        }
+    </script>
+</body>
+</html>
