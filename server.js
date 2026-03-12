@@ -34,22 +34,21 @@ app.get('/generate-playlist', async (req, res) => {
   const token = spotifyApi.getAccessToken();
   if (!token) return res.status(401).json({ success: false, error: "Please reconnect." });
 
-  const { genres, market } = req.query;
+  const { genres } = req.query;
   const genreList = genres ? genres.split(',').filter(g => g.trim() !== "").slice(0, 5) : ['pop'];
 
   try {
-    // We now use the 'market' from the frontend (e.g., 'GB', 'US', 'FR')
+    // We removed 'market' entirely. Spotify will use your account's default.
     const data = await spotifyApi.getRecommendations({
       seed_genres: genreList,
-      limit: 20,
-      market: market || 'US' 
+      limit: 20
     });
 
     const trackUris = data.body.tracks.map(t => t.uri);
     const me = await spotifyApi.getMe();
     
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix (${market || 'Global'}): ${genreList[0].toUpperCase()}`, 
+      name: `AI Mix: ${genreList.join(' & ').toUpperCase()}`, 
       public: true 
     });
     
@@ -58,7 +57,9 @@ app.get('/generate-playlist', async (req, res) => {
 
   } catch (err) {
       console.error("ERROR:", err);
-      res.status(500).json({ success: false, error: "Spotify refused the request. Check your market code." });
+      // Clean error unpacking
+      const msg = err.body?.error?.message || "Spotify refused the request.";
+      res.status(500).json({ success: false, error: msg });
   }
 });
 

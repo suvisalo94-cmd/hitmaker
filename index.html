@@ -8,10 +8,11 @@
         #status { padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 14px; font-weight: bold; }
         .on { background: #1db95422; color: #1DB954; border: 1px solid #1DB954; }
         .off { background: #ff555522; color: #ff5555; border: 1px solid #ff5555; }
-        input, button, select { margin: 10px 0; padding: 14px; border-radius: 10px; border: none; width: 100%; box-sizing: border-box; font-size: 16px; }
-        input, select { background: #282828; color: white; border: 1px solid #3e3e3e; }
+        input, button { margin: 10px 0; padding: 14px; border-radius: 10px; border: none; width: 100%; box-sizing: border-box; font-size: 16px; }
+        input { background: #282828; color: white; border: 1px solid #3e3e3e; }
         button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; }
         .tag { display: inline-block; background: #333; padding: 8px 15px; margin: 5px; border-radius: 25px; cursor: pointer; font-size: 13px; }
+        .tag:hover { background: #ff5555; }
         #result { margin-top: 25px; }
         a { color: #1DB954; text-decoration: none; font-weight: bold; }
     </style>
@@ -24,18 +25,8 @@
         
         <hr style="border: 0.5px solid #333; margin: 25px 0;">
         
-        <input type="text" id="genreIn" placeholder="Genre (e.g. pop) & Enter">
+        <input type="text" id="genreIn" placeholder="Type genre (pop, rock) & Enter">
         <div id="tags"></div>
-
-        <div style="text-align: left; margin-top: 15px; font-size: 12px; color: #888;">Market (Auto-detected):</div>
-        <select id="market">
-            <option value="US">United States (US)</option>
-            <option value="GB">United Kingdom (GB)</option>
-            <option value="CA">Canada (CA)</option>
-            <option value="FR">France (FR)</option>
-            <option value="DE">Germany (DE)</option>
-            <option value="AU">Australia (AU)</option>
-        </select>
 
         <button onclick="generate()" style="margin-top:20px;">Generate Playlist</button>
         <div id="result"></div>
@@ -45,22 +36,13 @@
         let genres = [];
 
         window.onload = async () => {
-            // 1. Check Auth
             const res = await fetch('/check-auth');
             const data = await res.json();
             if (data.loggedIn) {
-                document.getElementById('status').innerText = "Connected ✅";
-                document.getElementById('status').className = "on";
+                const s = document.getElementById('status');
+                s.innerText = "Connected ✅";
+                s.className = "on";
             }
-
-            // 2. Auto-detect Market via IP
-            try {
-                const ipRes = await fetch('https://ipapi.co/json/');
-                const ipData = await ipRes.json();
-                if (ipData.country_code) {
-                    document.getElementById('market').value = ipData.country_code;
-                }
-            } catch (e) { console.log("IP lookup failed, defaulting to US."); }
         };
 
         document.getElementById('genreIn').addEventListener('keypress', (e) => {
@@ -85,16 +67,15 @@
         async function generate() {
             if (genres.length === 0) return alert("Add at least one genre!");
             const resDiv = document.getElementById('result');
-            const market = document.getElementById('market').value;
             resDiv.innerHTML = "Creating... ✨";
 
             try {
-                const response = await fetch(`/generate-playlist?genres=${genres.join(',')}&market=${market}`);
+                const response = await fetch(`/generate-playlist?genres=${genres.join(',')}`);
                 const data = await response.json();
                 if(data.success) {
                     resDiv.innerHTML = `<a href="${data.url}" target="_blank">Success! View Playlist ➔</a>`;
                 } else {
-                    resDiv.innerHTML = `<div style="color:#ff5555">${data.error}</div>`;
+                    resDiv.innerHTML = `<div style="color:#ff5555">Error: ${data.error}</div>`;
                 }
             } catch (err) { resDiv.innerHTML = "Error connecting to server."; }
         }
