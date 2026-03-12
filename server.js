@@ -39,33 +39,24 @@ app.get('/generate-playlist', async (req, res) => {
   const { genres, mood, bpm, decade } = req.query;
 
   if (!spotifyApi.getAccessToken()) {
-    return res.status(401).json({ success: false, error: "AUTH_EXPIRED" });
+    return res.status(401).json({ success: false, error: "Please login again." });
   }
 
   try {
-    const seedGenres = genres && genres.length > 0 ? genres.split(',').slice(0, 5) : ['pop'];
+    // Safety: ensure we have at least 'pop' as a genre
+    const seedGenres = (genres && genres.length > 0) ? genres.split(',').slice(0, 5) : ['pop'];
     
-    // Decade Logic
-    let searchQuery = '';
-    if (decade) {
-      const startYear = parseInt(decade);
-      searchQuery = `year:${startYear}-${startYear + 9}`;
-    }
-
     const recommendations = await spotifyApi.getRecommendations({
       seed_genres: seedGenres,
       target_tempo: bpm || 120,
       target_valence: parseFloat(mood) || 0.5,
-      limit: 20,
-      q: searchQuery
+      limit: 20
     });
 
     const trackUris = recommendations.body.tracks.map(t => t.uri);
-    if (trackUris.length === 0) throw new Error("No tracks found. Try a different decade or genre.");
-
     const me = await spotifyApi.getMe();
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      'name': `AI Mix: ${seedGenres[0]} ${decade || ''}`, 
+      'name': `AI Mix: ${seedGenres[0]}`, 
       'public': true 
     });
     
@@ -73,18 +64,12 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    // --- THE SUPER UNPACKER ---
-    console.log("--- RAW ERROR DETECTED ---");
-    let finalMsg = "Unknown Spotify Error";
-
-    if (err.body && err.body.error) {
-        finalMsg = err.body.error.message || JSON.stringify(err.body.error);
-    } else if (err.message) {
-        finalMsg = err.message;
-    }
+    console.log("--- DETAILED ERROR LOG ---");
+    console.log(JSON.stringify(err, null, 2)); // This reveals everything
     
-    console.log("Extracted Message:", finalMsg);
-    res.status(500).json({ success: false, error: finalMsg });
+    let msg = "Spotify Error";
+    if (err.body && err.body.error) msg = err.body.error.message || JSON.stringify(err.body.error);
+    res.status(500).json({ success: false, error: String(msg) });
   }
 });
 
