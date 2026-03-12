@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const SpotifyWebApi = require('spotify-web-api-node');
 const path = require('path');
+const axios = require('axios'); // Ensure 'npm install axios' was run
 const app = express();
 
 const spotifyApi = new SpotifyWebApi({
@@ -31,40 +32,47 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  if (!spotifyApi.getAccessToken()) return res.status(401).json({ success: false, error: "Reconnect Spotify" });
+  const token = spotifyApi.getAccessToken();
+  if (!token) return res.status(401).json({ success: false, error: "Reconnect Spotify" });
 
   try {
-    // --- STEP 1: SEARCH FOR POP SONGS ---
-    // This uses the Search API instead of Recommendations. 
-    // It's much more stable and almost never returns a 404/400.
-    const searchData = await spotifyApi.searchTracks('genre:pop', { limit: 20 });
+    // --- THE HARD-CODED NUCLEAR OPTION ---
+    // We are manually building the URL string. 
+    // No objects, no library helpers, just a raw HTTP GET request.
+    const searchUrl = "https://api.spotify.com/v1/search?q=genre%3Apop&type=track&limit=20";
     
-    const tracks = searchData.body.tracks.items;
+    const searchResponse = await axios.get(searchUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const tracks = searchResponse.data.tracks.items;
     if (!tracks || tracks.length === 0) {
       return res.status(404).json({ success: false, error: "No tracks found" });
     }
 
     const trackUris = tracks.map(t => t.uri);
-
-    // --- STEP 2: GET USER ID ---
     const me = await spotifyApi.getMe();
     
-    // --- STEP 3: CREATE PLAYLIST ---
+    // Create the playlist
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
       name: "AI Pop Hits", 
       public: true 
     });
     
-    // --- STEP 4: ADD TRACKS ---
+    // Add tracks
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
     
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- FINAL DEBUG LOG ---");
-    console.log("Status:", err.statusCode);
-    console.log("Error Body:", JSON.stringify(err.body));
-    res.status(500).json({ success: false, error: err.message });
+    console.log("--- DEBUG LOG ---");
+    if (err.response) {
+        console.log("Status:", err.response.status);
+        console.log("Body:", JSON.stringify(err.response.data));
+    } else {
+        console.log("Error:", err.message);
+    }
+    res.status(500).json({ success: false, error: "Final attempt failed." });
   }
 });
 
