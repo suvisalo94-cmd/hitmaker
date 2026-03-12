@@ -16,7 +16,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/check-auth', (req, res) => res.json({ loggedIn: !!spotifyApi.getAccessToken() }));
 
 app.get('/login', (req, res) => {
-  const scopes = ['playlist-modify-public', 'user-read-private'];
+  const scopes = ['playlist-modify-public', 'user-read-private', 'playlist-modify-private'];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
@@ -31,38 +31,57 @@ app.get('/callback', async (req, res) => {
 
 app.get('/generate-playlist', async (req, res) => {
   const token = spotifyApi.getAccessToken();
-  if (!token) return res.status(401).json({ success: false, error: "Relogin" });
+  if (!token) return res.status(401).json({ success: false, error: "Please reconnect Spotify." });
+
+  const { genres, decade } = req.query;
+  const seedGenre = genres ? genres.split(',')[0] : 'pop';
 
   try {
-    // WE ARE HARD-CODING EVERYTHING TO ELIMINATE VARIABLES
-    const searchUrl = 'http://googleusercontent.com/spotify.com/4';
-    
-    console.log("Calling bare-bones URL...");
+    // 1. BUILD THE SEARCH QUERY
+    let q = `genre:${seedGenre}`;
+    if (decade) q += ` year:${decade}-${parseInt(decade) + 9}`;
 
-    const response = await axios.get(searchUrl, {
+    // 2. THE RAW AXIOS CALL (Using the CORRECT Spotify URL)
+    console.log(`Searching for: ${q}`);
+    
+    const response = await axios.get('https://api.spotify.com/v1/search', {
+      params: {
+        q: q,
+        type: 'track',
+        limit: 20
+      },
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
     const trackUris = response.data.tracks.items.map(t => t.uri);
+
+    if (trackUris.length === 0) {
+      return res.status(404).json({ success: false, error: "No songs found for that genre/decade." });
+    }
+
+    // 3. CREATE PLAYLIST
     const me = await spotifyApi.getMe();
-    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: "AI Success Mix", 
+      name: `AI Success Mix: ${seedGenre.toUpperCase()}`, 
       public: true 
     });
     
+    // 4. ADD TRACKS
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
+    
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- ERROR DETAIL ---");
+    console.log("--- ERROR LOG ---");
     if (err.response) {
-        console.log(err.response.data);
+        console.log("Status:", err.response.status);
+        console.log("Data:", err.response.data);
     } else {
         console.log(err.message);
     }
-    res.status(500).json({ success: false, error: "Still failing. Check logs." });
+    res.status(500).json({ success: false, error: "Communication failed. Try clicking Connect again." });
   }
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
