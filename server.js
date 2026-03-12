@@ -11,19 +11,12 @@ const spotifyApi = new SpotifyWebApi({
   redirectUri: process.env.REDIRECT_URI
 });
 
-// Serve the UI
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// Check auth status
-app.get('/check-auth', (req, res) => {
-  res.json({ loggedIn: !!spotifyApi.getAccessToken() });
-});
+app.get('/check-auth', (req, res) => res.json({ loggedIn: !!spotifyApi.getAccessToken() }));
 
-// Login
 app.get('/login', (req, res) => {
-  const scopes = ['playlist-modify-public', 'playlist-modify-private', 'user-read-private'];
+  const scopes = ['playlist-modify-public', 'user-read-private'];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
@@ -33,68 +26,43 @@ app.get('/callback', async (req, res) => {
     const data = await spotifyApi.authorizationCodeGrant(code);
     spotifyApi.setAccessToken(data.body['access_token']);
     res.redirect('/'); 
-  } catch (err) {
-    res.status(500).send('Login Failed');
-  }
+  } catch (err) { res.status(500).send('Login Failed'); }
 });
 
-// THE FULL FIX FOR GENERATING PLAYLISTS
 app.get('/generate-playlist', async (req, res) => {
-  const { genres, mood, bpm, decade } = req.query;
   const token = spotifyApi.getAccessToken();
-
-  if (!token) {
-    return res.status(401).json({ success: false, error: "Please login again." });
-  }
+  if (!token) return res.status(401).json({ success: false, error: "Relogin" });
 
   try {
-    const seedGenre = genres ? genres.split(',')[0] : 'pop';
+    // WE ARE HARD-CODING EVERYTHING TO ELIMINATE VARIABLES
+    const searchUrl = 'http://googleusercontent.com/spotify.com/4';
     
-    // BUILD SEARCH QUERY
-    let query = `genre:${seedGenre}`;
-    if (decade && decade !== "") {
-        query += ` year:${decade}-${parseInt(decade) + 9}`;
-    }
+    console.log("Calling bare-bones URL...");
 
-    // RAW URL to bypass the "Invalid Limit" library bug
-    const encodedQuery = encodeURIComponent(query);
-    const rawUrl = `https://api.spotify.com/v1/search?q=${encodedQuery}&type=track&limit=20`;
-    
-    console.log("Calling Raw URL:", rawUrl);
-
-    const searchResponse = await axios.get(rawUrl, {
+    const response = await axios.get(searchUrl, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    const trackUris = searchResponse.data.tracks.items.map(t => t.uri);
-
-    if (trackUris.length === 0) {
-      return res.status(404).json({ success: false, error: "No tracks found." });
-    }
-
-    // CREATE PLAYLIST
+    const trackUris = response.data.tracks.items.map(t => t.uri);
     const me = await spotifyApi.getMe();
+    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix: ${seedGenre.toUpperCase()}`, 
+      name: "AI Success Mix", 
       public: true 
     });
     
-    // ADD TRACKS
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
-    
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- API ERROR ---");
+    console.log("--- ERROR DETAIL ---");
     if (err.response) {
-        console.log("Status:", err.response.status);
-        console.log("Body:", JSON.stringify(err.response.data, null, 2));
+        console.log(err.response.data);
     } else {
-        console.log("Message:", err.message);
+        console.log(err.message);
     }
-    res.status(500).json({ success: false, error: "Communication error with Spotify." });
+    res.status(500).json({ success: false, error: "Still failing. Check logs." });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(process.env.PORT || 3000);
