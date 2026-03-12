@@ -27,54 +27,44 @@ app.get('/callback', async (req, res) => {
     const data = await spotifyApi.authorizationCodeGrant(code);
     spotifyApi.setAccessToken(data.body['access_token']);
     res.redirect('/'); 
-  } catch (err) { 
-    res.status(500).send('Login Failed'); 
-  }
+  } catch (err) { res.status(500).send('Login Failed'); }
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  const token = spotifyApi.getAccessToken();
-  if (!token) return res.status(401).json({ success: false, error: "Please reconnect Spotify." });
-
-  const genres = req.query.genres || 'pop';
+  if (!spotifyApi.getAccessToken()) return res.status(401).json({ success: false, error: "Reconnect Spotify" });
 
   try {
-    // FIX: Changed to HTTPS and added manual limit/seed formatting
-    const recUrl = `https://api.spotify.com/v1/recommendations?seed_genres=${encodeURIComponent(genres)}&limit=20`;
+    // --- STEP 1: SEARCH FOR POP SONGS ---
+    // This uses the Search API instead of Recommendations. 
+    // It's much more stable and almost never returns a 404/400.
+    const searchData = await spotifyApi.searchTracks('genre:pop', { limit: 20 });
     
-    const recResponse = await fetch(recUrl, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    // Safety check: Don't parse if the response is empty or failed
-    if (!recResponse.ok) {
-        const errorText = await recResponse.text();
-        console.error("Spotify API Error:", errorText);
-        return res.status(recResponse.status).json({ success: false, error: "Spotify rejected the request." });
+    const tracks = searchData.body.tracks.items;
+    if (!tracks || tracks.length === 0) {
+      return res.status(404).json({ success: false, error: "No tracks found" });
     }
 
-    const recData = await recResponse.json();
+    const trackUris = tracks.map(t => t.uri);
 
-    if (!recData.tracks || recData.tracks.length === 0) {
-      return res.status(404).json({ success: false, error: "No tracks found for these genres." });
-    }
-
-    const trackUris = recData.tracks.map(t => t.uri);
+    // --- STEP 2: GET USER ID ---
     const me = await spotifyApi.getMe();
     
-    const playlistResponse = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix: ${genres.toUpperCase()}`, 
+    // --- STEP 3: CREATE PLAYLIST ---
+    const playlist = await spotifyApi.createPlaylist(me.body.id, { 
+      name: "AI Pop Hits", 
       public: true 
     });
     
-    await spotifyApi.addTracksToPlaylist(playlistResponse.body.id, trackUris);
+    // --- STEP 4: ADD TRACKS ---
+    await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
     
-    res.json({ success: true, url: playlistResponse.body.external_urls.spotify });
+    res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-      console.error("CRITICAL ERROR:", err);
-      res.status(500).json({ success: false, error: "Something went wrong. Check logs." });
+    console.log("--- FINAL DEBUG LOG ---");
+    console.log("Status:", err.statusCode);
+    console.log("Error Body:", JSON.stringify(err.body));
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
