@@ -39,24 +39,41 @@ app.get('/generate-playlist', async (req, res) => {
   const { genres, mood, bpm, decade } = req.query;
 
   if (!spotifyApi.getAccessToken()) {
-    return res.status(401).json({ success: false, error: "Please login again." });
+    return res.status(401).json({ success: false, error: "Please log in again." });
   }
 
   try {
-    // Safety: ensure we have at least 'pop' as a genre
+    // 1. Setup Base Recommendations (Spotify needs at least 1 genre seed)
     const seedGenres = (genres && genres.length > 0) ? genres.split(',').slice(0, 5) : ['pop'];
     
-    const recommendations = await spotifyApi.getRecommendations({
+    const options = {
       seed_genres: seedGenres,
-      target_tempo: bpm || 120,
+      target_tempo: bpm ? parseInt(bpm) : 120,
       target_valence: parseFloat(mood) || 0.5,
       limit: 20
-    });
+    };
 
+    // 2. Add Decade Constraints if provided
+    // Using min/max year is safer than 'q' search for recommendation endpoints
+    if (decade) {
+        options.min_year = parseInt(decade);
+        options.max_year = parseInt(decade) + 9;
+    }
+
+    const recommendations = await spotifyApi.getRecommendations(options);
     const trackUris = recommendations.body.tracks.map(t => t.uri);
+    
+    if (trackUris.length === 0) {
+        return res.status(404).json({ success: false, error: "No songs found for this specific combo. Try a different decade or genre!" });
+    }
+
+    // 3. Create and Populate Playlist
     const me = await spotifyApi.getMe();
+    const playlistName = `AI Mix: ${seedGenres[0].toUpperCase()} ${decade ? decade + 's' : ''}`;
+    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      'name': `AI Mix: ${seedGenres[0]}`, 
+      'name': playlistName, 
+      'description': 'Generated via Hit Maker Pro',
       'public': true 
     });
     
@@ -64,12 +81,15 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- DETAILED ERROR LOG ---");
-    console.log(JSON.stringify(err, null, 2)); // This reveals everything
+    console.log("--- ERROR DEBUG ---");
+    console.log(JSON.stringify(err, null, 2));
     
     let msg = "Spotify Error";
-    if (err.body && err.body.error) msg = err.body.error.message || JSON.stringify(err.body.error);
-    res.status(500).json({ success: false, error: String(msg) });
+    if (err.statusCode === 404) msg = "Combination too specific. Try removing the decade filter.";
+    else if (err.body && err.body.error) msg = err.body.error.message;
+    else if (err.message) msg = err.message;
+    
+    res.status(err.statusCode || 500).json({ success: false, error: String(msg) });
   }
 });
 
