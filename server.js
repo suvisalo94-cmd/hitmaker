@@ -35,42 +35,44 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  const { genres, mood, bpm } = req.query; // Removed decade temporarily to stabilize
+  const { genres, mood, bpm, decade } = req.query;
 
   if (!spotifyApi.getAccessToken()) {
     return res.status(401).json({ success: false, error: "Please login again." });
   }
 
   try {
-    // 1. Force a valid array. Spotify NEEDS at least one seed.
-    let seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : [];
-    if (seedGenres.length === 0) seedGenres = ['pop'];
+    const seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : ['pop'];
+    let trackUris = [];
 
-    // 2. Build the exact object Spotify expects
-    // Note: We are using ONLY seed_genres, target_tempo, and target_valence
-    const recommendationOptions = {
-      seed_genres: seedGenres.slice(0, 5),
-      target_valence: parseFloat(mood) || 0.5,
-      limit: 20
-    };
-
-    // Only add tempo if it's a valid number
-    if (bpm && !isNaN(bpm)) {
-        recommendationOptions.target_tempo = parseInt(bpm);
+    try {
+      // ATTEMPT 1: The Recommendation Engine
+      // We add 'market: US' which fixes most 404 errors on this endpoint
+      const recData = await spotifyApi.getRecommendations({
+        seed_genres: seedGenres.slice(0, 5),
+        target_valence: parseFloat(mood) || 0.5,
+        target_tempo: parseInt(bpm) || 120,
+        limit: 20,
+        market: 'US' 
+      });
+      trackUris = recData.body.tracks.map(t => t.uri);
+    } catch (recErr) {
+      console.log("Recommendation engine failed, falling back to Search...");
+      
+      // ATTEMPT 2: Fallback to Search (This NEVER 404s)
+      // We search for tracks based on the genre and optional decade
+      let searchQuery = `genre:${seedGenres[0]}`;
+      if (decade) searchQuery += ` year:${decade}-${parseInt(decade) + 9}`;
+      
+      const searchData = await spotifyApi.searchTracks(searchQuery, { limit: 20 });
+      trackUris = searchData.body.tracks.items.map(t => t.uri);
     }
 
-    console.log("Attempting Spotify Recommendations with:", recommendationOptions);
-
-    const data = await spotifyApi.getRecommendations(recommendationOptions);
-    const tracks = data.body.tracks;
-
-    if (!tracks || tracks.length === 0) {
-      return res.status(404).json({ success: false, error: "No tracks found for this vibe." });
+    if (trackUris.length === 0) {
+      return res.status(404).json({ success: false, error: "No tracks found even in fallback!" });
     }
 
-    const trackUris = tracks.map(t => t.uri);
     const me = await spotifyApi.getMe();
-    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
       name: `AI Mix: ${seedGenres[0]}`, 
       public: true 
@@ -80,12 +82,8 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- FINAL DEBUG LOG ---");
-    console.log("Status Code:", err.statusCode);
-    console.log("Error Body:", JSON.stringify(err.body, null, 2));
-    
-    const msg = err.body?.error?.message || err.message || "Spotify Error";
-    res.status(err.statusCode || 500).json({ success: false, error: msg });
+    console.log("--- SYSTEM ERROR ---", err);
+    res.status(500).json({ success: false, error: err.message || "Final fallback error" });
   }
 });
 
