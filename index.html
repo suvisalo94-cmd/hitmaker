@@ -1,45 +1,108 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Spotify Hit Maker</title>
+    <title>Spotify Hit Maker Pro</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 50px; }
-        input, select, button { margin: 10px; padding: 10px; border-radius: 5px; border: none; }
-        button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: white; text-align: center; padding: 30px; }
+        .container { max-width: 600px; margin: auto; background: #181818; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; }
+        input, select { background: #282828; color: white; }
+        button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; font-size: 16px; margin-top: 20px; }
+        button:hover { background: #1ed760; }
+        
+        .genre-container { text-align: left; margin: 10px 0; }
+        .genre-tag { display: inline-block; background: #1DB954; color: white; padding: 5px 12px; margin: 5px 5px 0 0; border-radius: 20px; font-size: 13px; }
+        #result { margin-top: 25px; padding: 15px; border-radius: 8px; }
+        #result a { color: #1DB954; font-weight: bold; text-decoration: none; border: 1px solid #1DB954; padding: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <h1>Generate Your Current Hits</h1>
-    <a href="/login"><button>1. Login with Spotify</button></a>
-    
-    <div id="filters">
-        <input type="text" id="genre" placeholder="Genre (e.g. rock, pop)">
+    <div class="container">
+        <h1>Spotify Hit Maker</h1>
+        <p>Step 1: Authorization</p>
+        <a href="/login"><button style="background: #ffffff; color: #121212;">Login with Spotify</button></a>
+        
+        <hr style="border: 0.5px solid #333; margin: 30px 0;">
+        
+        <p>Step 2: Customize your Vibe</p>
+        <div class="genre-container">
+            <input type="text" id="genreInput" list="genreList" placeholder="Type genre & press Enter (e.g. rock, pop, techno)">
+            <datalist id="genreList">
+                <option value="acoustic"> <option value="afrobeat"> <option value="alt-rock">
+                <option value="ambient"> <option value="classical"> <option value="dance">
+                <option value="electronic"> <option value="hip-hop"> <option value="indie">
+                <option value="jazz"> <option value="k-pop"> <option value="metal">
+                <option value="pop"> <option value="reggae"> <option value="rock">
+            </datalist>
+            <div id="selectedGenres"></div>
+        </div>
+
         <select id="mood">
-            <option value="happy">Happy/Upbeat</option>
-            <option value="chill">Chill/Relaxed</option>
+            <option value="0.8">Happy / Upbeat</option>
+            <option value="0.3">Chill / Relaxed</option>
+            <option value="0.9">High Energy / Gym</option>
+            <option value="0.1">Sad / Somber</option>
+            <option value="0.5">Neutral / Focused</option>
         </select>
+
         <input type="number" id="bpm" placeholder="BPM (e.g. 128)">
         <input type="number" id="decade" placeholder="Decade (e.g. 1990)">
-        <br>
-        <button onclick="generate()">2. Create Playlist</button>
+        
+        <button onclick="generate()">Create My Playlist</button>
+
+        <div id="result"></div>
     </div>
 
-    <div id="result"></div>
-
     <script>
+        let genres = [];
+        const genreInput = document.getElementById('genreInput');
+        const genreDisplay = document.getElementById('selectedGenres');
+
+        // Capture Genre Entry
+        genreInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                const val = genreInput.value.trim().toLowerCase();
+                if (val && !genres.includes(val)) {
+                    if (genres.length >= 5) {
+                        alert("Spotify limits to 5 genres max.");
+                    } else {
+                        genres.push(val);
+                        updateGenreUI();
+                    }
+                }
+                genreInput.value = '';
+            }
+        });
+
+        function updateGenreUI() {
+            genreDisplay.innerHTML = genres.map(g => `<span class="genre-tag">${g}</span>`).join('');
+        }
+
         async function generate() {
-            const genre = document.getElementById('genre').value;
+            const resultDiv = document.getElementById('result');
             const mood = document.getElementById('mood').value;
             const bpm = document.getElementById('bpm').value;
             const decade = document.getElementById('decade').value;
 
-            const res = await fetch(`/generate-playlist?genre=${genre}&mood=${mood}&bpm=${bpm}&decade=${decade}`);
-            const data = await res.json();
-            
-            if(data.success) {
-                document.getElementById('result').innerHTML = `<a href="${data.url}" target="_blank">View Playlist on Spotify</a>`;
-            } else {
-                alert("Error: " + data.error);
+            // Safety check: If they haven't picked a genre, we must provide one
+            const genreList = genres.length > 0 ? genres.join(',') : 'pop';
+
+            resultDiv.innerHTML = "Processing your hits... 🎧";
+
+            try {
+                const url = `/generate-playlist?genres=${genreList}&mood=${mood}&bpm=${bpm}&decade=${decade}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if(data.success) {
+                    resultDiv.innerHTML = `<h3>Success!</h3><a href="${data.url}" target="_blank">View Playlist on Spotify</a>`;
+                } else {
+                    // Extract the message from the error object if necessary
+                    const msg = data.error?.message || data.error || "Unknown Error";
+                    resultDiv.innerHTML = `<div style="color:#ff5555">Error: ${msg}</div>`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div style="color:#ff5555">Network Error: Could not connect to server.</div>`;
             }
         }
     </script>
