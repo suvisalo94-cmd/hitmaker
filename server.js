@@ -10,11 +10,12 @@ const spotifyApi = new SpotifyWebApi({
   redirectUri: process.env.REDIRECT_URI
 });
 
+// Serve the UI
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Check if the server currently has a valid token
+// Check if server has a token in memory
 app.get('/check-auth', (req, res) => {
   const token = spotifyApi.getAccessToken();
   res.json({ loggedIn: !!token });
@@ -32,15 +33,17 @@ app.get('/callback', async (req, res) => {
     spotifyApi.setAccessToken(data.body['access_token']);
     res.redirect('/'); 
   } catch (err) {
-    res.status(500).send('Login Failed');
+    console.error('Callback Error:', err);
+    res.status(500).send('Login Failed. Please go back and try again.');
   }
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  const { genres, mood, bpm, decade } = req.query;
+  const { genres, mood } = req.query;
 
-  if (!spotifyApi.getAccessToken()) {
-    return res.status(401).json({ success: false, error: "Not logged in to Spotify" });
+  const token = spotifyApi.getAccessToken();
+  if (!token) {
+    return res.status(401).json({ success: false, error: "Session expired. Please click 'Connect' again." });
   }
 
   try {
@@ -49,13 +52,12 @@ app.get('/generate-playlist', async (req, res) => {
     // 1. Get Recommendations
     const recommendations = await spotifyApi.getRecommendations({
       seed_genres: seedGenres,
-      target_tempo: bpm || 120,
       target_valence: parseFloat(mood) || 0.5,
       limit: 20
     });
 
     const trackUris = recommendations.body.tracks.map(t => t.uri);
-    if (trackUris.length === 0) throw new Error("No tracks found for these settings.");
+    if (trackUris.length === 0) throw new Error("No tracks found. Try different genres!");
 
     // 2. Get User and Create Playlist
     const me = await spotifyApi.getMe();
@@ -68,11 +70,19 @@ app.get('/generate-playlist', async (req, res) => {
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
 
     res.json({ success: true, url: playlist.body.external_urls.spotify });
+
   } catch (err) {
-    console.error(err);
-    // Extract actual error message so we don't send [object Object]
-    const msg = err.body?.error?.message || err.message || "Spotify Error";
-    res.status(500).json({ success: false, error: msg });
+    console.error('Generation Error Detail:', err);
+    
+    // THE ULTIMATE FIX: Extracting the string from the error object
+    let errorMessage = "Spotify API Error";
+    if (err.body && err.body.error && err.body.error.message) {
+        errorMessage = err.body.error.message;
+    } else if (err.message) {
+        errorMessage = err.message;
+    }
+
+    res.status(500).json({ success: false, error: errorMessage });
   }
 });
 
