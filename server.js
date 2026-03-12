@@ -10,12 +10,10 @@ const spotifyApi = new SpotifyWebApi({
   redirectUri: process.env.REDIRECT_URI
 });
 
-// Serve the UI
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Check if server has a token in memory
 app.get('/check-auth', (req, res) => {
   const token = spotifyApi.getAccessToken();
   res.json({ loggedIn: !!token });
@@ -33,56 +31,61 @@ app.get('/callback', async (req, res) => {
     spotifyApi.setAccessToken(data.body['access_token']);
     res.redirect('/'); 
   } catch (err) {
-    console.error('Callback Error:', err);
-    res.status(500).send('Login Failed. Please go back and try again.');
+    res.status(500).send('Login Failed');
   }
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  const { genres, mood } = req.query;
+  const { genres, mood, bpm, decade } = req.query;
 
-  const token = spotifyApi.getAccessToken();
-  if (!token) {
-    return res.status(401).json({ success: false, error: "Session expired. Please click 'Connect' again." });
+  if (!spotifyApi.getAccessToken()) {
+    return res.status(401).json({ success: false, error: "Please log in again (Session Expired)." });
   }
 
   try {
-    const seedGenres = genres ? genres.split(',').slice(0, 5) : ['pop'];
+    // 1. Defaults & Multi-Genre Logic
+    const seedGenres = genres && genres.length > 0 ? genres.split(',').slice(0, 5) : ['pop'];
     
-    // 1. Get Recommendations
+    // 2. Build Search Query for Decade
+    let searchQuery = '';
+    if (decade) {
+      const startYear = parseInt(decade);
+      searchQuery = `year:${startYear}-${startYear + 9}`;
+    }
+
+    // 3. Get Recommendations
     const recommendations = await spotifyApi.getRecommendations({
       seed_genres: seedGenres,
+      target_tempo: bpm || 120,
       target_valence: parseFloat(mood) || 0.5,
-      limit: 20
+      limit: 20,
+      q: searchQuery // This helps filter by year/decade
     });
 
     const trackUris = recommendations.body.tracks.map(t => t.uri);
-    if (trackUris.length === 0) throw new Error("No tracks found. Try different genres!");
+    if (trackUris.length === 0) throw new Error("Spotify couldn't find tracks for that combination.");
 
-    // 2. Get User and Create Playlist
+    // 4. Create Playlist
     const me = await spotifyApi.getMe();
+    const playlistName = `AI Mix: ${seedGenres[0]} ${decade ? decade + 's' : ''}`;
+    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      'name': `AI Mix: ${seedGenres.join(' & ')}`, 
+      'name': playlistName, 
       'public': true 
     });
     
-    // 3. Add Tracks
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
 
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.error('Generation Error Detail:', err);
-    
-    // THE ULTIMATE FIX: Extracting the string from the error object
-    let errorMessage = "Spotify API Error";
-    if (err.body && err.body.error && err.body.error.message) {
-        errorMessage = err.body.error.message;
-    } else if (err.message) {
-        errorMessage = err.message;
-    }
+    console.error('Full Error:', err);
+    // The "Anti-Object" Fix
+    let msg = "Unknown Error";
+    if (err.body && err.body.error) msg = err.body.error.message || err.body.error;
+    else if (err.message) msg = err.message;
 
-    res.status(500).json({ success: false, error: errorMessage });
+    res.status(500).json({ success: false, error: String(msg) });
   }
 });
 
