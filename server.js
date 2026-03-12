@@ -19,11 +19,7 @@ app.get('/check-auth', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  const scopes = [
-    'playlist-modify-public', 
-    'playlist-modify-private', 
-    'user-read-private'
-  ];
+  const scopes = ['playlist-modify-public', 'playlist-modify-private', 'user-read-private'];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
@@ -39,7 +35,11 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  let { genres, mood, bpm, decade } = req.query;
+  // We strictly parse these right at the start
+  const genres = req.query.genres;
+  const mood = parseFloat(req.query.mood) || 0.5;
+  const bpm = req.query.bpm ? parseInt(req.query.bpm) : null;
+  const decade = req.query.decade ? parseInt(req.query.decade) : null;
 
   if (!spotifyApi.getAccessToken()) {
     return res.status(401).json({ success: false, error: "Please login again." });
@@ -49,28 +49,29 @@ app.get('/generate-playlist', async (req, res) => {
     const seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : ['pop'];
     let trackUris = [];
 
-    // THE FIX: We use parseInt and parseFloat to ensure these are NUMBERS, not strings.
-    const recommendationOptions = {
-      seed_genres: seedGenres.slice(0, 5),
-      target_valence: parseFloat(mood) || 0.5,
-      limit: 20, // Hardcoded as a number to be safe
-      market: 'GB' 
-    };
+    // --- ATTEMPT 1: RECOMMENDATIONS ---
+    try {
+      const recOptions = {
+        seed_genres: seedGenres.slice(0, 5),
+        target_valence: mood,
+        limit: 20 // Fixed integer
+      };
+      if (bpm) recOptions.target_tempo = bpm;
 
-    if (bpm && bpm !== "") {
-      recommendationOptions.target_tempo = parseInt(bpm);
+      const recData = await spotifyApi.getRecommendations(recOptions);
+      trackUris = recData.body.tracks.map(t => t.uri);
+    } catch (e) {
+      console.log("Rec engine failed or returned nothing.");
     }
 
-    try {
-      const recData = await spotifyApi.getRecommendations(recommendationOptions);
-      trackUris = recData.body.tracks.map(t => t.uri);
-    } catch (recErr) {
-      console.log("Recommendations failed, trying search fallback...");
-      // Fallback Search
-      let searchQuery = `genre:${seedGenres[0]}`;
-      if (decade) searchQuery += ` year:${decade}-${parseInt(decade) + 9}`;
+    // --- ATTEMPT 2: SEARCH FALLBACK ---
+    if (trackUris.length === 0) {
+      console.log("Falling back to Search...");
+      let q = `genre:${seedGenres[0]}`;
+      if (decade) q += ` year:${decade}-${decade + 9}`;
       
-      const searchData = await spotifyApi.searchTracks(searchQuery, { limit: 20 });
+      // We pass ONLY the limit to see if it clears the error
+      const searchData = await spotifyApi.searchTracks(q, { limit: 20 });
       trackUris = searchData.body.tracks.items.map(t => t.uri);
     }
 
@@ -78,6 +79,7 @@ app.get('/generate-playlist', async (req, res) => {
       return res.status(404).json({ success: false, error: "No tracks found." });
     }
 
+    // --- PLAYLIST CREATION ---
     const me = await spotifyApi.getMe();
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
       name: `AI Mix: ${seedGenres[0].toUpperCase()}`, 
