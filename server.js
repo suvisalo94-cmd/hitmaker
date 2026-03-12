@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const SpotifyWebApi = require('spotify-web-api-node');
 const path = require('path');
+const axios = require('axios'); // We'll use axios for a direct call
 const app = express();
 
 const spotifyApi = new SpotifyWebApi({
@@ -35,45 +36,35 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  // We strictly parse these right at the start
-  const genres = req.query.genres;
-  const mood = parseFloat(req.query.mood) || 0.5;
-  const bpm = req.query.bpm ? parseInt(req.query.bpm) : null;
-  const decade = req.query.decade ? parseInt(req.query.decade) : null;
+  const { genres, mood, bpm, decade } = req.query;
+  const token = spotifyApi.getAccessToken();
 
-  if (!spotifyApi.getAccessToken()) {
+  if (!token) {
     return res.status(401).json({ success: false, error: "Please login again." });
   }
 
   try {
-    const seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : ['pop'];
+    const seedGenre = genres ? genres.split(',')[0] : 'pop';
     let trackUris = [];
 
-    // --- ATTEMPT 1: RECOMMENDATIONS ---
-    try {
-      const recOptions = {
-        seed_genres: seedGenres.slice(0, 5),
-        target_valence: mood,
-        limit: 20 // Fixed integer
-      };
-      if (bpm) recOptions.target_tempo = bpm;
+    // --- DIRECT SEARCH CALL (Bypassing the library's limit bug) ---
+    console.log(`Searching for: ${seedGenre} in decade: ${decade}`);
+    
+    let query = `genre:${seedGenre}`;
+    if (decade) query += ` year:${decade}-${parseInt(decade) + 9}`;
 
-      const recData = await spotifyApi.getRecommendations(recOptions);
-      trackUris = recData.body.tracks.map(t => t.uri);
-    } catch (e) {
-      console.log("Rec engine failed or returned nothing.");
-    }
+    const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
+      params: {
+        q: query,
+        type: 'track',
+        limit: 20 // Direct number
+      },
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-    // --- ATTEMPT 2: SEARCH FALLBACK ---
-    if (trackUris.length === 0) {
-      console.log("Falling back to Search...");
-      let q = `genre:${seedGenres[0]}`;
-      if (decade) q += ` year:${decade}-${decade + 9}`;
-      
-      // We pass ONLY the limit to see if it clears the error
-      const searchData = await spotifyApi.searchTracks(q, { limit: 20 });
-      trackUris = searchData.body.tracks.items.map(t => t.uri);
-    }
+    trackUris = searchResponse.data.tracks.items.map(t => t.uri);
 
     if (trackUris.length === 0) {
       return res.status(404).json({ success: false, error: "No tracks found." });
@@ -82,7 +73,7 @@ app.get('/generate-playlist', async (req, res) => {
     // --- PLAYLIST CREATION ---
     const me = await spotifyApi.getMe();
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix: ${seedGenres[0].toUpperCase()}`, 
+      name: `AI Mix: ${seedGenre.toUpperCase()}`, 
       public: true 
     });
     
@@ -90,10 +81,10 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- FINAL ERROR LOG ---", JSON.stringify(err, null, 2));
-    res.status(err.statusCode || 500).json({ 
+    console.log("--- ERROR ---", err.response ? err.response.data : err.message);
+    res.status(500).json({ 
         success: false, 
-        error: err.body?.error?.message || "Internal Server Error" 
+        error: "Search failed. Check Render logs for details." 
     });
   }
 });
