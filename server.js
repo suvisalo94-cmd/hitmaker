@@ -39,7 +39,7 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/generate-playlist', async (req, res) => {
-  const { genres, mood, bpm, decade } = req.query;
+  let { genres, mood, bpm, decade } = req.query;
 
   if (!spotifyApi.getAccessToken()) {
     return res.status(401).json({ success: false, error: "Please login again." });
@@ -49,25 +49,26 @@ app.get('/generate-playlist', async (req, res) => {
     const seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : ['pop'];
     let trackUris = [];
 
-    // Ensure numeric values are actual Numbers, not Strings
+    // THE FIX: We use parseInt and parseFloat to ensure these are NUMBERS, not strings.
     const recommendationOptions = {
       seed_genres: seedGenres.slice(0, 5),
       target_valence: parseFloat(mood) || 0.5,
-      limit: 20, // Explicitly a number
-      market: 'GB' // Adjusted to your current location (UK)
+      limit: 20, // Hardcoded as a number to be safe
+      market: 'GB' 
     };
 
-    if (bpm && !isNaN(bpm)) {
-      recommendationOptions.target_tempo = Number(bpm);
+    if (bpm && bpm !== "") {
+      recommendationOptions.target_tempo = parseInt(bpm);
     }
 
     try {
       const recData = await spotifyApi.getRecommendations(recommendationOptions);
       trackUris = recData.body.tracks.map(t => t.uri);
     } catch (recErr) {
-      console.log("Recommendation failed, searching instead...");
+      console.log("Recommendations failed, trying search fallback...");
+      // Fallback Search
       let searchQuery = `genre:${seedGenres[0]}`;
-      if (decade) searchQuery += ` year:${decade}-${Number(decade) + 9}`;
+      if (decade) searchQuery += ` year:${decade}-${parseInt(decade) + 9}`;
       
       const searchData = await spotifyApi.searchTracks(searchQuery, { limit: 20 });
       trackUris = searchData.body.tracks.items.map(t => t.uri);
@@ -87,7 +88,7 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- GENERATION ERROR ---", err);
+    console.log("--- FINAL ERROR LOG ---", JSON.stringify(err, null, 2));
     res.status(err.statusCode || 500).json({ 
         success: false, 
         error: err.body?.error?.message || "Internal Server Error" 
