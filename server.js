@@ -10,56 +10,88 @@ const spotifyApi = new SpotifyWebApi({
   redirectUri: process.env.REDIRECT_URI
 });
 
+// Serve the frontend
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
+// Check if we have an access token
 app.get('/check-auth', (req, res) => {
   res.json({ loggedIn: !!spotifyApi.getAccessToken() });
 });
 
+// Redirect to Spotify Login
 app.get('/login', (req, res) => {
-  const scopes = ['playlist-modify-public', 'user-read-private'];
+  const scopes = ['playlist-modify-public', 'user-read-private', 'playlist-modify-private'];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
+// Handle the callback from Spotify
 app.get('/callback', async (req, res) => {
   const { code } = req.query;
   try {
     const data = await spotifyApi.authorizationCodeGrant(code);
     spotifyApi.setAccessToken(data.body['access_token']);
     res.redirect('/'); 
-  } catch (err) { res.status(500).send('Login Failed'); }
+  } catch (err) { 
+    console.error("Login Error:", err);
+    res.status(500).send('Login Failed'); 
+  }
 });
 
+// The core engine
 app.get('/generate-playlist', async (req, res) => {
   const token = spotifyApi.getAccessToken();
-  if (!token) return res.status(401).json({ success: false, error: "Please reconnect." });
+  if (!token) return res.status(401).json({ success: false, error: "Please reconnect Spotify." });
 
-  const { genres } = req.query;
-  const genreList = genres ? genres.split(',').filter(g => g.trim() !== "").slice(0, 5) : ['pop'];
+  // Get genres from the URL query
+  const genres = req.query.genres || 'pop';
 
   try {
-    // We removed 'market' entirely. Spotify will use your account's default.
-    const data = await spotifyApi.getRecommendations({
-      seed_genres: genreList,
-      limit: 20
-    });
-
-    const trackUris = data.body.tracks.map(t => t.uri);
-    const me = await spotifyApi.getMe();
+    // 1. DIRECT FETCH FOR RECOMMENDATIONS
+    // We use the raw URL to avoid the "Invalid Limit" and "Ghost 404" library bugs
+    const recUrl = `https://api.spotify.com/v1/recommendations?seed_genres=${encodeURIComponent(genres)}&limit=20`;
     
-    const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix: ${genreList.join(' & ').toUpperCase()}`, 
+    const recResponse = await fetch(recUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    const recData = await recResponse.json();
+
+    if (recData.error) {
+        return res.status(400).json({ success: false, error: recData.error.message });
+    }
+
+    if (!recData.tracks || recData.tracks.length === 0) {
+      return res.status(404).json({ success: false, error: "No tracks found for these genres." });
+    }
+
+    const trackUris = recData.tracks.map(t => t.uri);
+
+    // 2. GET USER ID
+    const me = await spotifyApi.getMe();
+    const userId = me.body.id;
+
+    // 3. CREATE THE PLAYLIST
+    const playlistResponse = await spotifyApi.createPlaylist(userId, { 
+      name: `AI Mix: ${genres.toUpperCase()}`, 
       public: true 
     });
+    const playlistId = playlistResponse.body.id;
     
-    await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
-    res.json({ success: true, url: playlist.body.external_urls.spotify });
+    // 4. ADD THE TRACKS
+    await spotifyApi.addTracksToPlaylist(playlistId, trackUris);
+    
+    // Send back the success link
+    res.json({ 
+        success: true, 
+        url: playlistResponse.body.external_urls.spotify 
+    });
 
   } catch (err) {
-      console.error("ERROR:", err);
-      // Clean error unpacking
-      const msg = err.body?.error?.message || "Spotify refused the request.";
-      res.status(500).json({ success: false, error: msg });
+      console.error("SYSTEM ERROR:", err);
+      res.status(500).json({ 
+          success: false, 
+          error: "Communication error. Try reconnecting your account." 
+      });
   }
 });
 
