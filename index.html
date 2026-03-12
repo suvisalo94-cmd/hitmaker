@@ -3,106 +3,120 @@
 <head>
     <title>Spotify Hit Maker Pro</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: white; text-align: center; padding: 30px; }
-        .container { max-width: 600px; margin: auto; background: #181818; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; }
-        input, select { background: #282828; color: white; }
-        button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; font-size: 16px; margin-top: 20px; }
-        button:hover { background: #1ed760; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; padding: 30px; }
+        .container { max-width: 500px; margin: auto; background: #181818; padding: 30px; border-radius: 15px; border: 1px solid #282828; }
         
-        .genre-container { text-align: left; margin: 10px 0; }
-        .genre-tag { display: inline-block; background: #1DB954; color: white; padding: 5px 12px; margin: 5px 5px 0 0; border-radius: 20px; font-size: 13px; }
-        #result { margin-top: 25px; padding: 15px; border-radius: 8px; }
-        #result a { color: #1DB954; font-weight: bold; text-decoration: none; border: 1px solid #1DB954; padding: 10px; border-radius: 5px; }
+        #authStatus { padding: 10px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; font-size: 14px; }
+        .logged-in { background: #1db95422; color: #1DB954; border: 1px solid #1DB954; }
+        .logged-out { background: #ff555522; color: #ff5555; border: 1px solid #ff5555; }
+
+        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; font-size: 15px; }
+        input, select { background: #282828; color: white; }
+        
+        button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #1ed760; transform: translateY(-2px); }
+        .login-btn { background: white; color: black; margin-bottom: 20px; }
+
+        .genre-tag { 
+            display: inline-block; background: #333; color: white; 
+            padding: 6px 15px; margin: 5px 5px 0 0; border-radius: 20px; 
+            cursor: pointer; font-size: 13px; border: 1px solid #444;
+        }
+        .genre-tag:hover { background: #ff5555; border-color: #ff5555; }
+        #result { margin-top: 25px; min-height: 50px; }
+        a { color: #1DB954; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Spotify Hit Maker</h1>
-        <p>Step 1: Authorization</p>
-        <a href="/login"><button style="background: #ffffff; color: #121212;">Login with Spotify</button></a>
+        <h1>Hit Maker Pro</h1>
         
-        <hr style="border: 0.5px solid #333; margin: 30px 0;">
+        <div id="authStatus" class="logged-out">Checking Connection...</div>
+        <a href="/login"><button class="login-btn">Connect Spotify Account</button></a>
         
-        <p>Step 2: Customize your Vibe</p>
-        <div class="genre-container">
-            <input type="text" id="genreInput" list="genreList" placeholder="Type genre & press Enter (e.g. rock, pop, techno)">
-            <datalist id="genreList">
-                <option value="acoustic"> <option value="afrobeat"> <option value="alt-rock">
-                <option value="ambient"> <option value="classical"> <option value="dance">
-                <option value="electronic"> <option value="hip-hop"> <option value="indie">
-                <option value="jazz"> <option value="k-pop"> <option value="metal">
-                <option value="pop"> <option value="reggae"> <option value="rock">
-            </datalist>
-            <div id="selectedGenres"></div>
-        </div>
+        <hr style="border: 0.5px solid #333; margin: 20px 0;">
+        
+        <div style="text-align: left; font-size: 14px; margin-bottom: 5px; color: #b3b3b3;">Genres (Press Enter to add, click to remove):</div>
+        <input type="text" id="genreInput" list="genreList" placeholder="e.g. rock, techno, indie-pop">
+        <datalist id="genreList">
+            <option value="pop"> <option value="rock"> <option value="hip-hop"> 
+            <option value="indie"> <option value="techno"> <option value="jazz">
+            <option value="classical"> <option value="dance"> <option value="alt-rock">
+        </datalist>
+        <div id="selectedGenres" style="text-align: left; margin-bottom: 15px;"></div>
 
         <select id="mood">
-            <option value="0.8">Happy / Upbeat</option>
+            <option value="0.8">Happy / High Energy</option>
             <option value="0.3">Chill / Relaxed</option>
-            <option value="0.9">High Energy / Gym</option>
-            <option value="0.1">Sad / Somber</option>
-            <option value="0.5">Neutral / Focused</option>
+            <option value="0.1">Deep / Somber</option>
+            <option value="0.5">Neutral / Focus</option>
         </select>
 
-        <input type="number" id="bpm" placeholder="BPM (e.g. 128)">
-        <input type="number" id="decade" placeholder="Decade (e.g. 1990)">
-        
-        <button onclick="generate()">Create My Playlist</button>
-
+        <button onclick="generate()">Generate Playlist</button>
         <div id="result"></div>
     </div>
 
     <script>
         let genres = [];
-        const genreInput = document.getElementById('genreInput');
-        const genreDisplay = document.getElementById('selectedGenres');
 
-        // Capture Genre Entry
-        genreInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                const val = genreInput.value.trim().toLowerCase();
-                if (val && !genres.includes(val)) {
-                    if (genres.length >= 5) {
-                        alert("Spotify limits to 5 genres max.");
-                    } else {
-                        genres.push(val);
-                        updateGenreUI();
-                    }
+        // Check Login Status on Page Load
+        window.onload = async () => {
+            try {
+                const res = await fetch('/check-auth');
+                const data = await res.json();
+                const statusDiv = document.getElementById('authStatus');
+                if (data.loggedIn) {
+                    statusDiv.innerText = "Spotify Connected ✅";
+                    statusDiv.className = "logged-in";
+                } else {
+                    statusDiv.innerText = "Spotify Not Connected ❌";
+                    statusDiv.className = "logged-out";
                 }
-                genreInput.value = '';
+            } catch (e) { console.error("Auth check failed"); }
+        };
+
+        // Add Genre on Enter
+        document.getElementById('genreInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const val = e.target.value.trim().toLowerCase();
+                if (val && !genres.includes(val) && genres.length < 5) {
+                    genres.push(val);
+                    renderGenres();
+                }
+                e.target.value = '';
             }
         });
 
-        function updateGenreUI() {
-            genreDisplay.innerHTML = genres.map(g => `<span class="genre-tag">${g}</span>`).join('');
+        function renderGenres() {
+            const container = document.getElementById('selectedGenres');
+            container.innerHTML = genres.map((g, i) => 
+                `<span class="genre-tag" onclick="removeGenre(${i})">${g} ×</span>`
+            ).join('');
+        }
+
+        function removeGenre(index) {
+            genres.splice(index, 1);
+            renderGenres();
         }
 
         async function generate() {
             const resultDiv = document.getElementById('result');
-            const mood = document.getElementById('mood').value;
-            const bpm = document.getElementById('bpm').value;
-            const decade = document.getElementById('decade').value;
+            if (genres.length === 0) return alert("Add at least one genre!");
 
-            // Safety check: If they haven't picked a genre, we must provide one
-            const genreList = genres.length > 0 ? genres.join(',') : 'pop';
-
-            resultDiv.innerHTML = "Processing your hits... 🎧";
+            resultDiv.innerHTML = "Creating magic... ✨";
 
             try {
-                const url = `/generate-playlist?genres=${genreList}&mood=${mood}&bpm=${bpm}&decade=${decade}`;
-                const res = await fetch(url);
+                const res = await fetch(`/generate-playlist?genres=${genres.join(',')}&mood=${document.getElementById('mood').value}`);
                 const data = await res.json();
                 
                 if(data.success) {
-                    resultDiv.innerHTML = `<h3>Success!</h3><a href="${data.url}" target="_blank">View Playlist on Spotify</a>`;
+                    resultDiv.innerHTML = `<a href="${data.url}" target="_blank">Success! Click to open Playlist ➔</a>`;
                 } else {
-                    // Extract the message from the error object if necessary
-                    const msg = data.error?.message || data.error || "Unknown Error";
-                    resultDiv.innerHTML = `<div style="color:#ff5555">Error: ${msg}</div>`;
+                    // Safe error display
+                    resultDiv.innerHTML = `<span style="color:#ff5555">Error: ${data.error}</span>`;
                 }
             } catch (err) {
-                resultDiv.innerHTML = `<div style="color:#ff5555">Network Error: Could not connect to server.</div>`;
+                resultDiv.innerHTML = `<span style="color:#ff5555">Server Error. Please refresh and try again.</span>`;
             }
         }
     </script>
