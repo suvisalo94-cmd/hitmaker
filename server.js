@@ -19,7 +19,11 @@ app.get('/check-auth', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  const scopes = ['playlist-modify-public', 'user-read-private'];
+  const scopes = [
+    'playlist-modify-public', 
+    'playlist-modify-private', 
+    'user-read-private'
+  ];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
@@ -45,36 +49,37 @@ app.get('/generate-playlist', async (req, res) => {
     const seedGenres = genres ? genres.split(',').filter(g => g.trim() !== "") : ['pop'];
     let trackUris = [];
 
+    // Ensure numeric values are actual Numbers, not Strings
+    const recommendationOptions = {
+      seed_genres: seedGenres.slice(0, 5),
+      target_valence: parseFloat(mood) || 0.5,
+      limit: 20, // Explicitly a number
+      market: 'GB' // Adjusted to your current location (UK)
+    };
+
+    if (bpm && !isNaN(bpm)) {
+      recommendationOptions.target_tempo = Number(bpm);
+    }
+
     try {
-      // ATTEMPT 1: The Recommendation Engine
-      // We add 'market: US' which fixes most 404 errors on this endpoint
-      const recData = await spotifyApi.getRecommendations({
-        seed_genres: seedGenres.slice(0, 5),
-        target_valence: parseFloat(mood) || 0.5,
-        target_tempo: parseInt(bpm) || 120,
-        limit: 20,
-        market: 'US' 
-      });
+      const recData = await spotifyApi.getRecommendations(recommendationOptions);
       trackUris = recData.body.tracks.map(t => t.uri);
     } catch (recErr) {
-      console.log("Recommendation engine failed, falling back to Search...");
-      
-      // ATTEMPT 2: Fallback to Search (This NEVER 404s)
-      // We search for tracks based on the genre and optional decade
+      console.log("Recommendation failed, searching instead...");
       let searchQuery = `genre:${seedGenres[0]}`;
-      if (decade) searchQuery += ` year:${decade}-${parseInt(decade) + 9}`;
+      if (decade) searchQuery += ` year:${decade}-${Number(decade) + 9}`;
       
       const searchData = await spotifyApi.searchTracks(searchQuery, { limit: 20 });
       trackUris = searchData.body.tracks.items.map(t => t.uri);
     }
 
     if (trackUris.length === 0) {
-      return res.status(404).json({ success: false, error: "No tracks found even in fallback!" });
+      return res.status(404).json({ success: false, error: "No tracks found." });
     }
 
     const me = await spotifyApi.getMe();
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      name: `AI Mix: ${seedGenres[0]}`, 
+      name: `AI Mix: ${seedGenres[0].toUpperCase()}`, 
       public: true 
     });
     
@@ -82,8 +87,11 @@ app.get('/generate-playlist', async (req, res) => {
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.log("--- SYSTEM ERROR ---", err);
-    res.status(500).json({ success: false, error: err.message || "Final fallback error" });
+    console.log("--- GENERATION ERROR ---", err);
+    res.status(err.statusCode || 500).json({ 
+        success: false, 
+        error: err.body?.error?.message || "Internal Server Error" 
+    });
   }
 });
 
