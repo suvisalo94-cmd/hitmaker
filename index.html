@@ -4,43 +4,38 @@
     <title>Spotify Hit Maker Pro</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; padding: 30px; }
-        .container { max-width: 500px; margin: auto; background: #181818; padding: 30px; border-radius: 15px; border: 1px solid #282828; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        #authStatus { padding: 10px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; font-size: 14px; transition: 0.3s; }
+        .container { max-width: 500px; margin: auto; background: #181818; padding: 30px; border-radius: 15px; border: 1px solid #282828; }
+        #authStatus { padding: 10px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; font-size: 14px; }
         .logged-in { background: #1db95422; color: #1DB954; border: 1px solid #1DB954; }
         .logged-out { background: #ff555522; color: #ff5555; border: 1px solid #ff5555; }
-        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; font-size: 15px; }
-        input, select { background: #282828; color: white; border: 1px solid #3e3e3e; }
+        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; background: #282828; color: white; font-size: 15px; }
         button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; }
-        button:hover { background: #1ed760; }
-        .genre-tag { display: inline-block; background: #333; color: white; padding: 6px 15px; margin: 5px 5px 0 0; border-radius: 20px; cursor: pointer; font-size: 13px; }
-        .genre-tag:hover { background: #ff5555; }
-        #result { margin-top: 25px; min-height: 50px; }
+        .genre-tag { display: inline-block; background: #333; padding: 5px 12px; margin: 5px 5px 0 0; border-radius: 20px; cursor: pointer; font-size: 12px; }
+        #result { margin-top: 20px; }
         a { color: #1DB954; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Hit Maker Pro</h1>
-        <div id="authStatus" class="logged-out">Status: Checking Connection...</div>
+        <div id="authStatus" class="logged-out">Status: Not Connected</div>
         <a href="/login"><button style="background:white; color:black;">Connect Spotify Account</button></a>
         <hr style="border: 0.5px solid #333; margin: 25px 0;">
         
-        <div style="text-align: left; font-size: 14px; margin-bottom: 5px; color: #b3b3b3;">Genres (Type & Press Enter):</div>
-        <input type="text" id="genreInput" list="genreList" placeholder="e.g. pop, rock, techno">
+        <input type="text" id="genreInput" list="genreList" placeholder="Genre & Enter (Optional)">
         <datalist id="genreList">
-            <option value="pop"> <option value="rock"> <option value="hip-hop"> <option value="indie"> <option value="techno">
-            <option value="jazz"> <option value="dance"> <option value="alt-rock"> <option value="acoustic">
+            <option value="pop"> <option value="rock"> <option value="hip-hop"> <option value="techno"> <option value="indie">
         </datalist>
-        <div id="selectedGenres" style="text-align: left; margin-bottom: 15px;"></div>
+        <div id="selectedGenres" style="text-align: left; margin-bottom: 10px;"></div>
 
         <select id="mood">
-            <option value="0.5">Vibe: Neutral (Optional)</option>
-            <option value="0.8">Vibe: Happy / High Energy</option>
+            <option value="0.5">Vibe: Neutral</option>
+            <option value="0.8">Vibe: Happy / Upbeat</option>
             <option value="0.2">Vibe: Chill / Sad</option>
         </select>
 
         <input type="number" id="bpm" placeholder="BPM (Optional)">
-        <input type="number" id="decade" placeholder="Decade (e.g. 1990) - Optional">
+        <input type="number" id="decade" placeholder="Decade (e.g. 1990)">
 
         <button onclick="generate()">Generate Playlist</button>
         <div id="result"></div>
@@ -50,15 +45,13 @@
         let genres = [];
 
         window.onload = async () => {
-            try {
-                const res = await fetch('/check-auth');
-                const data = await res.json();
-                if (data.loggedIn) {
-                    const statusDiv = document.getElementById('authStatus');
-                    statusDiv.innerText = "Spotify Connected ✅";
-                    statusDiv.className = "logged-in";
-                }
-            } catch (e) { console.log("Init check failed"); }
+            const res = await fetch('/check-auth');
+            const data = await res.json();
+            if (data.loggedIn) {
+                const statusDiv = document.getElementById('authStatus');
+                statusDiv.innerText = "Spotify Connected ✅";
+                statusDiv.className = "logged-in";
+            }
         };
 
         document.getElementById('genreInput').addEventListener('keypress', (e) => {
@@ -78,15 +71,11 @@
             ).join('');
         }
 
-        function removeGenre(index) {
-            genres.splice(index, 1);
-            renderGenres();
-        }
+        function removeGenre(i) { genres.splice(i, 1); renderGenres(); }
 
         async function generate() {
-            const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = "Consulting the hits... ✨";
-
+            const resDiv = document.getElementById('result');
+            resDiv.innerHTML = "Creating magic... ✨";
             const params = new URLSearchParams({
                 genres: genres.join(','),
                 mood: document.getElementById('mood').value,
@@ -95,19 +84,15 @@
             });
 
             try {
-                const res = await fetch(`/generate-playlist?${params}`);
-                const data = await res.json();
-                
+                const response = await fetch(`/generate-playlist?${params}`);
+                const data = await response.json();
                 if(data.success) {
-                    resultDiv.innerHTML = `<div style="background:#1db95422; padding:15px; border-radius:8px; border:1px solid #1DB954;">
-                        <a href="${data.url}" target="_blank">Playlist Ready! Open Spotify ➔</a>
-                    </div>`;
+                    resDiv.innerHTML = `<a href="${data.url}" target="_blank">Success! Open Playlist ➔</a>`;
                 } else {
-                    const msg = typeof data.error === 'string' ? data.error : "Spotify Error";
-                    resultDiv.innerHTML = `<div style="color:#ff5555; background:#ff555511; padding:10px; border-radius:8px;">Error: ${msg}</div>`;
+                    resDiv.innerHTML = `<div style="color:#ff5555">Error: ${data.error}</div>`;
                 }
             } catch (err) {
-                resultDiv.innerHTML = "Server connection lost. Try logging in again.";
+                resDiv.innerHTML = "Connection Error.";
             }
         }
     </script>
