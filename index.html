@@ -8,13 +8,10 @@
         #authStatus { padding: 10px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; font-size: 14px; }
         .logged-in { background: #1db95422; color: #1DB954; border: 1px solid #1DB954; }
         .logged-out { background: #ff555522; color: #ff5555; border: 1px solid #ff5555; }
-        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; font-size: 15px; background: #282828; color: white; }
+        input, select, button { margin: 10px 0; padding: 12px; border-radius: 8px; border: none; width: 100%; box-sizing: border-box; background: #282828; color: white; }
         button { background: #1DB954; color: white; cursor: pointer; font-weight: bold; }
-        button:hover { background: #1ed760; }
-        .genre-tag { display: inline-block; background: #333; padding: 5px 12px; margin: 5px 5px 0 0; border-radius: 20px; cursor: pointer; font-size: 13px; }
-        .genre-tag:hover { background: #ff5555; }
-        #result { margin-top: 25px; }
-        a { color: #1DB954; text-decoration: none; font-weight: bold; }
+        .genre-tag { display: inline-block; background: #333; padding: 5px 12px; margin: 5px 5px 0 0; border-radius: 20px; cursor: pointer; font-size: 12px; }
+        #result { margin-top: 20px; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
@@ -22,23 +19,22 @@
         <h1>Hit Maker Pro</h1>
         <div id="authStatus" class="logged-out">Checking Connection...</div>
         <a href="/login"><button style="background:white; color:black;">Connect Spotify Account</button></a>
-        
         <hr style="border: 0.5px solid #333; margin: 20px 0;">
         
-        <input type="text" id="genreInput" list="genreList" placeholder="Type genre & Enter (Optional)">
+        <input type="text" id="genreInput" list="genreList" placeholder="Genre & Enter (Optional)">
         <datalist id="genreList">
             <option value="pop"> <option value="rock"> <option value="hip-hop"> <option value="techno"> <option value="indie">
         </datalist>
-        <div id="selectedGenres" style="text-align: left; margin-bottom: 10px;"></div>
+        <div id="selectedGenres" style="text-align: left;"></div>
 
         <select id="mood">
-            <option value="0.5">Mood: Neutral (Optional)</option>
-            <option value="0.8">Mood: Happy / Upbeat</option>
-            <option value="0.2">Mood: Chill / Sad</option>
+            <option value="0.5">Vibe: Neutral</option>
+            <option value="0.8">Vibe: Happy / Upbeat</option>
+            <option value="0.2">Vibe: Chill / Sad</option>
         </select>
 
-        <input type="number" id="bpm" placeholder="BPM (e.g. 128) - Optional">
-        <input type="number" id="decade" placeholder="Decade (e.g. 1990) - Optional">
+        <input type="number" id="bpm" placeholder="BPM (Optional)">
+        <input type="number" id="decade" placeholder="Decade (e.g. 1980)">
 
         <button onclick="generate()">Generate Playlist</button>
         <div id="result"></div>
@@ -46,14 +42,12 @@
 
     <script>
         let genres = [];
-
         window.onload = async () => {
             const res = await fetch('/check-auth');
             const data = await res.json();
-            const statusDiv = document.getElementById('authStatus');
             if (data.loggedIn) {
-                statusDiv.innerText = "Spotify Connected ✅";
-                statusDiv.className = "logged-in";
+                document.getElementById('authStatus').innerText = "Connected ✅";
+                document.getElementById('authStatus').className = "logged-in";
             }
         };
 
@@ -74,15 +68,11 @@
             ).join('');
         }
 
-        function removeGenre(index) {
-            genres.splice(index, 1);
-            renderGenres();
-        }
+        function removeGenre(i) { genres.splice(i, 1); renderGenres(); }
 
         async function generate() {
-            const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = "Creating magic... ✨";
-
+            const resDiv = document.getElementById('result');
+            resDiv.innerHTML = "Processing... ✨";
             const params = new URLSearchParams({
                 genres: genres.join(','),
                 mood: document.getElementById('mood').value,
@@ -91,18 +81,15 @@
             });
 
             try {
-                const res = await fetch(`/generate-playlist?${params}`);
-                const data = await res.json();
-                
+                const response = await fetch(`/generate-playlist?${params}`);
+                const data = await response.json();
                 if(data.success) {
-                    resultDiv.innerHTML = `<a href="${data.url}" target="_blank">Playlist Ready! Open Spotify ➔</a>`;
+                    resDiv.innerHTML = `<a href="${data.url}" target="_blank" style="color:#1DB954">Open Playlist ➔</a>`;
                 } else {
-                    // String conversion fix for the [object Object] error
-                    const errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-                    resultDiv.innerHTML = `<span style="color:#ff5555">Error: ${errorMsg}</span>`;
+                    resDiv.innerHTML = `<div style="color:#ff5555">Error: ${data.error}</div>`;
                 }
             } catch (err) {
-                resultDiv.innerHTML = "Server Error. Try logging in again.";
+                resDiv.innerHTML = "Connection Error.";
             }
         }
     </script>

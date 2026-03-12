@@ -20,7 +20,7 @@ app.get('/check-auth', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  const scopes = ['playlist-modify-public', 'user-read-private'];
+  const scopes = ['playlist-modify-public', 'playlist-modify-private', 'user-read-private'];
   res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
 
@@ -39,53 +39,52 @@ app.get('/generate-playlist', async (req, res) => {
   const { genres, mood, bpm, decade } = req.query;
 
   if (!spotifyApi.getAccessToken()) {
-    return res.status(401).json({ success: false, error: "Please log in again (Session Expired)." });
+    return res.status(401).json({ success: false, error: "AUTH_EXPIRED" });
   }
 
   try {
-    // 1. Defaults & Multi-Genre Logic
     const seedGenres = genres && genres.length > 0 ? genres.split(',').slice(0, 5) : ['pop'];
     
-    // 2. Build Search Query for Decade
+    // Decade Logic
     let searchQuery = '';
     if (decade) {
       const startYear = parseInt(decade);
       searchQuery = `year:${startYear}-${startYear + 9}`;
     }
 
-    // 3. Get Recommendations
     const recommendations = await spotifyApi.getRecommendations({
       seed_genres: seedGenres,
       target_tempo: bpm || 120,
       target_valence: parseFloat(mood) || 0.5,
       limit: 20,
-      q: searchQuery // This helps filter by year/decade
+      q: searchQuery
     });
 
     const trackUris = recommendations.body.tracks.map(t => t.uri);
-    if (trackUris.length === 0) throw new Error("Spotify couldn't find tracks for that combination.");
+    if (trackUris.length === 0) throw new Error("No tracks found. Try a different decade or genre.");
 
-    // 4. Create Playlist
     const me = await spotifyApi.getMe();
-    const playlistName = `AI Mix: ${seedGenres[0]} ${decade ? decade + 's' : ''}`;
-    
     const playlist = await spotifyApi.createPlaylist(me.body.id, { 
-      'name': playlistName, 
+      'name': `AI Mix: ${seedGenres[0]} ${decade || ''}`, 
       'public': true 
     });
     
     await spotifyApi.addTracksToPlaylist(playlist.body.id, trackUris);
-
     res.json({ success: true, url: playlist.body.external_urls.spotify });
 
   } catch (err) {
-    console.error('Full Error:', err);
-    // The "Anti-Object" Fix
-    let msg = "Unknown Error";
-    if (err.body && err.body.error) msg = err.body.error.message || err.body.error;
-    else if (err.message) msg = err.message;
+    // --- THE SUPER UNPACKER ---
+    console.log("--- RAW ERROR DETECTED ---");
+    let finalMsg = "Unknown Spotify Error";
 
-    res.status(500).json({ success: false, error: String(msg) });
+    if (err.body && err.body.error) {
+        finalMsg = err.body.error.message || JSON.stringify(err.body.error);
+    } else if (err.message) {
+        finalMsg = err.message;
+    }
+    
+    console.log("Extracted Message:", finalMsg);
+    res.status(500).json({ success: false, error: finalMsg });
   }
 });
 
